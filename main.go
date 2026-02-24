@@ -106,20 +106,15 @@ func initR2() {
 		config.WithCredentialsProvider(
 			credentials.NewStaticCredentialsProvider(accessKey, secretKey, ""),
 		),
-		config.WithEndpointResolver(
-			aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
-				return aws.Endpoint{
-					URL: "https://" + accountID + ".r2.cloudflarestorage.com",
-				}, nil
-			}),
-		),
 	)
 
 	if err != nil {
 		log.Fatal("Failed to load R2 config:", err)
 	}
 
-	s3Client = s3.NewFromConfig(cfg)
+	s3Client = s3.NewFromConfig(cfg, func(o *s3.Options) {
+		o.BaseEndpoint = aws.String("https://" + accountID + ".r2.cloudflarestorage.com")
+	})
 }
 
 func uploadHandler(w http.ResponseWriter, r *http.Request) {
