@@ -35,6 +35,7 @@ var s3Client *s3.Client
 var bucketName string
 var publicURL string
 var apiKey string
+var allowedOrigins []string
 
 func main() {
 	_ = godotenv.Load()
@@ -51,8 +52,16 @@ func main() {
 		log.Fatal("Missing required environment variable: API_KEY")
 	}
 
-	http.HandleFunc("/", authMiddleware(healthHandler))
-	http.HandleFunc("/upload", authMiddleware(uploadHandler))
+	corsOrigins := os.Getenv("CORS_ALLOWED_ORIGINS")
+	if corsOrigins != "" {
+		allowedOrigins = strings.Split(corsOrigins, ",")
+		for i := range allowedOrigins {
+			allowedOrigins[i] = strings.TrimSpace(allowedOrigins[i])
+		}
+	}
+
+	http.HandleFunc("/", corsMiddleware(authMiddleware(healthHandler)))
+	http.HandleFunc("/upload", corsMiddleware(authMiddleware(uploadHandler)))
 
 	certFile := os.Getenv("TLS_CERT_FILE")
 	keyFile := os.Getenv("TLS_KEY_FILE")
@@ -64,6 +73,37 @@ func main() {
 		log.Println("🚀 Server running on port", port, "(HTTP)")
 		log.Fatal(http.ListenAndServe(":"+port, nil))
 	}
+}
+
+func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if origin != "" && isOriginAllowed(origin) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-API-Key")
+			w.Header().Set("Access-Control-Max-Age", "3600")
+		}
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next(w, r)
+	}
+}
+
+func isOriginAllowed(origin string) bool {
+	if len(allowedOrigins) == 0 {
+		return false
+	}
+	for _, allowed := range allowedOrigins {
+		if allowed == origin {
+			return true
+		}
+	}
+	return false
 }
 
 func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
